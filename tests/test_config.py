@@ -61,6 +61,7 @@ class TestSettings:
     def test_default_settings(self):
         """Test default settings values."""
         s = Settings(
+            _env_file=None,  # Ignore .env to test actual defaults
             admin_secret="test",
             session_secret="test-session",
         )
