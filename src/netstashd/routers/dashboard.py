@@ -9,11 +9,14 @@ from sqlmodel import Session, select
 
 from netstashd.auth import AdminRequired, add_stash_to_session, get_my_stashes, hash_password
 from netstashd.config import settings
+from netstashd.logging import get_logger
 from netstashd.secrets import get_admin_secret
 from netstashd.db import get_session
 from netstashd.models import Stash, StashCreate, StashInfo
 from netstashd.storage import ensure_stash_dir, get_remaining_global_space
 from netstashd.templates import templates
+
+log = get_logger(__name__)
 
 router = APIRouter()
 
@@ -56,7 +59,9 @@ async def login(request: Request, password: str = Form(...)):
     """Process admin login."""
     if secrets.compare_digest(password, get_admin_secret()):
         request.session["is_admin"] = True
+        log.info("Admin login successful")
         return RedirectResponse(url="/dashboard", status_code=303)
+    log.warning("Failed admin login attempt")
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -149,6 +154,8 @@ async def create_stash(
     session.commit()
     session.refresh(stash)
 
+    log.info(f"Stash created: {stash.id} ({name}, {max_size_bytes} bytes, admin)")
+
     return RedirectResponse(url=f"/s/{stash.id}", status_code=303)
 
 
@@ -198,5 +205,7 @@ async def create_stash_public(
 
     # Add to user's session so they can find it later
     add_stash_to_session(request, stash.id)
+
+    log.info(f"Stash created: {stash.id} ({name}, {max_size_bytes} bytes, guest)")
 
     return RedirectResponse(url=f"/s/{stash.id}", status_code=303)

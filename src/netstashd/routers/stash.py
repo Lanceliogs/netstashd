@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from netstashd.auth import add_stash_to_session, verify_password
+from netstashd.logging import get_logger
 from netstashd.secrets import get_admin_secret
 from netstashd.db import get_session
 from netstashd.models import Stash, StashInfo
@@ -24,6 +25,8 @@ from netstashd.storage import (
     resolve_path,
 )
 from netstashd.templates import templates
+
+log = get_logger(__name__)
 
 
 class BatchDeleteRequest(BaseModel):
@@ -187,6 +190,8 @@ async def delete_stash(
     session.delete(stash)
     session.commit()
 
+    log.info(f"Stash deleted: {stash_id}")
+
     return {"status": "deleted"}
 
 
@@ -220,39 +225,9 @@ async def delete_file(
     session.add(stash)
     session.commit()
 
+    log.info(f"Deleted {path} from stash {stash_id} ({size} bytes freed)")
+
     return {"status": "deleted", "freed_bytes": size}
-
-
-@router.post("/{stash_id}/mkdir")
-async def create_folder(
-    request: Request,
-    stash_id: str,
-    path: str = Form(""),
-    name: str = Form(...),
-    session: Session = Depends(get_session),
-):
-    """Create a new folder."""
-    stash = get_stash_or_404(stash_id, session)
-
-    if not has_stash_access(request, stash):
-        raise HTTPException(401, "Access denied")
-
-    base = get_stash_path(stash_id)
-    target = base / path / name if path else base / name
-
-    # Security check
-    try:
-        target.resolve().relative_to(base.resolve())
-    except ValueError:
-        raise HTTPException(400, "Invalid path")
-
-    if target.exists():
-        raise HTTPException(400, "Folder already exists")
-
-    target.mkdir(parents=True)
-
-    redirect_path = f"{path}/{name}" if path else name
-    return RedirectResponse(url=f"/s/{stash_id}/fs/{redirect_path}", status_code=303)
 
 
 @router.get("/{stash_id}/download-batch")

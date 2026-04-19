@@ -507,7 +507,7 @@ tr:hover {
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     padding: 20px;
-    margin-bottom: 24px;
+    margin-top: 16px;
 }
 
 .upload-header {
@@ -532,6 +532,7 @@ tr:hover {
     color: var(--color-success);
     margin-right: 4px;
 }
+
 
 .upload-progress-bar {
     height: 8px;

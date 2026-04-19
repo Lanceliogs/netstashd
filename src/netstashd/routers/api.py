@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from netstashd.auth import AdminRequired
 from netstashd.config import settings
+from netstashd.logging import get_logger
 from netstashd.secrets import (
     get_admin_secret,
     is_using_file_secret,
@@ -23,6 +24,8 @@ from netstashd.storage import (
     list_directory,
     resolve_path,
 )
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -133,12 +136,66 @@ async def upload_file(
     session.add(stash)
     session.commit()
 
+    log.info(f"Uploaded {file.filename} ({file_size} bytes) to stash {stash_id}")
+
     return {
         "status": "uploaded",
         "filename": file.filename,
         "size": file_size,
         "used_bytes": stash.used_bytes,
     }
+
+
+@router.post("/stashes/{stash_id}/mkdir")
+async def create_directory(
+    request: Request,
+    stash_id: str,
+    path: str,
+    session: Session = Depends(get_session),
+):
+    """Create a directory in a stash."""
+    stash = session.get(Stash, stash_id)
+    if not stash:
+        raise HTTPException(404, "Stash not found")
+
+    if stash.is_expired:
+        raise HTTPException(410, "Stash has expired")
+
+    # Access check
+    api_key = request.headers.get("x-api-key")
+    has_access = False
+    if request.session.get("is_admin"):
+        has_access = True
+    elif api_key and secrets.compare_digest(api_key, get_admin_secret()):
+        has_access = True
+    elif not stash.is_password_protected:
+        has_access = True
+    elif request.session.get(f"stash_access_{stash_id}"):
+        has_access = True
+
+    if not has_access:
+        raise HTTPException(401, "Access denied")
+
+    if not path:
+        raise HTTPException(400, "Path is required")
+
+    # Create directory
+    base = get_stash_path(stash_id)
+    target_dir = base / path
+    
+    # Security check
+    try:
+        target_dir.resolve().relative_to(base.resolve())
+    except ValueError:
+        raise HTTPException(400, "Invalid path")
+
+    already_existed = target_dir.exists()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    if not already_existed:
+        log.info(f"Created directory {path} in stash {stash_id}")
+
+    return {"status": "exists" if already_existed else "created", "path": path}
 
 
 @router.get("/status")
@@ -172,6 +229,7 @@ async def api_rotate_admin_secret():
     Make sure to save the returned key!
     """
     new_secret = rotate_admin_secret()
+    log.info("Admin API key rotated")
     return {
         "status": "rotated",
         "new_api_key": new_secret,
@@ -188,6 +246,7 @@ async def api_rotate_session_secret():
     The server must be restarted for this to take effect.
     """
     new_secret = rotate_session_secret()
+    log.warning("Session secret rotated - server restart required")
     return {
         "status": "rotated",
         "message": "Session secret rotated. Restart the server to apply. All sessions will be invalidated.",

@@ -11,6 +11,7 @@ def main() -> None:
         host=settings.host,
         port=settings.port,
         reload=False,
+        log_level=settings.log_level.lower(),
     )
 
 

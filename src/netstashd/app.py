@@ -9,15 +9,24 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from netstashd.config import settings
 from netstashd.db import init_db
+from netstashd.logging import get_logger, setup_logging
 from netstashd.routers import api, dashboard, stash
 from netstashd.secrets import get_session_secret
+
+log = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup."""
+    setup_logging()
+    log.info("Starting netstashd")
+    log.info(f"Storage root: {settings.share_root}")
+    log.info(f"Global quota: {settings.global_max_bytes / (1024**3):.1f} GB")
     init_db()
+    log.info("Database initialized")
     yield
+    log.info("Shutting down")
 
 
 app = FastAPI(

@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # Session
     session_max_age_days: int = 365  # How long session cookies persist
 
+    # Logging
+    log_level: str = "INFO"
+
     @property
     def db_path(self) -> Path:
         return self.share_root / "stashes.db"

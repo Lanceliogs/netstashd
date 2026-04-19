@@ -149,8 +149,7 @@
 <div id="new-folder-modal" class="modal" style="display: none;">
     <div class="modal-content">
         <h3>New Folder</h3>
-        <form action="/s/{{ stash.id }}/mkdir" method="post">
-            <input type="hidden" name="path" value="{{ path }}">
+        <form id="new-folder-form" onsubmit="submitNewFolder(event)">
             <div class="form-group">
                 <label for="folder-name">Folder Name</label>
                 <input type="text" id="folder-name" name="name" required>
@@ -407,6 +406,36 @@ function submitRename(e) {
         } else {
             r.json().then(data => {
                 showToast(data.detail || 'Failed to rename', 'error');
+            });
+        }
+    });
+}
+
+function submitNewFolder(e) {
+    e.preventDefault();
+    const name = document.getElementById('folder-name').value.trim();
+    
+    if (!name) {
+        hideModal('new-folder-modal');
+        return;
+    }
+    
+    const fullPath = currentPath ? `${currentPath}/${name}` : name;
+    
+    fetch(`/api/stashes/${stashId}/mkdir?path=${encodeURIComponent(fullPath)}`, {
+        method: 'POST'
+    })
+    .then(r => {
+        if (r.ok) {
+            r.json().then(data => {
+                if (data.status === 'exists') {
+                    showToast('Folder already exists', 'error');
+                }
+                window.location.href = `/s/${stashId}/fs/${fullPath}`;
+            });
+        } else {
+            r.json().then(data => {
+                showToast(data.detail || 'Failed to create folder', 'error');
             });
         }
     });
