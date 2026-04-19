@@ -1,6 +1,8 @@
 # netstashd
 
 A simple file sharing web application for your local network. Run it on your laptop, access files from any browser on the LAN.
+It's basically there to replace USB sticks when on the same network and not connected to the internet, and on Windows when,
+well, some people think that ssh and other basic human rights should be firewalled on secure environment (seriously...).
 
 ## Features
 
@@ -19,7 +21,7 @@ A simple file sharing web application for your local network. Run it on your lap
 ### Local Development
 
 ```bash
-cd local-share
+cd netstashd
 poetry install
 
 # Copy and edit config
