@@ -4,6 +4,8 @@ A simple file sharing web application for your local network. Run it on your lap
 It's basically there to replace USB sticks when on the same network and not connected to the internet, and on Windows when,
 well, some people think that ssh and other basic human rights should be firewalled on already secure or isolated environment (seriously...).
 
+It's really a USB stick alternative, not a safe place to store private things. This is also why the stashes (the content) has a limited time-to-live. It's designed like a USB stick. You can password protect the files, you can hide the key somewhere, but if someone finds it, he can get your data. It's basically an alternative to `python -m http.server` on steroids.
+
 ## Features
 
 - **Stash-based sharing**: Create isolated file storage areas with unique IDs
