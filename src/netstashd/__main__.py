@@ -7,7 +7,7 @@ from netstashd.config import settings
 
 def main() -> None:
     uvicorn.run(
-        "stashd.app:app",
+        "netstashd.app:app",
         host=settings.host,
         port=settings.port,
         reload=False,
