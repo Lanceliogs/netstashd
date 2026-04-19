@@ -1,0 +1,17 @@
+services:
+  stashd:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data/stashes
+    environment:
+      - SHARE_ROOT=/data/stashes
+      - ADMIN_SECRET=${ADMIN_SECRET:-change-me}
+      - GLOBAL_MAX_BYTES=${GLOBAL_MAX_BYTES:-10737418240}
+      - RESERVE_BYTES=${RESERVE_BYTES:-524288000}
+      - MAX_STASH_SIZE_BYTES=${MAX_STASH_SIZE_BYTES:-5368709120}
+      - MAX_TTL_DAYS=${MAX_TTL_DAYS:-30}
+      - HOST=0.0.0.0
+      - PORT=8000
+    restart: unless-stopped

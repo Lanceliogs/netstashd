@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Access {{ stash.name }} - netstashd{% endblock %}
+
+{% block content %}
+<div class="card centered-card">
+    <h2>🔒 {{ stash.name }}</h2>
+    <p>This stash is password protected</p>
+    
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    
+    <form action="/s/{{ stash.id }}/auth" method="post" class="login-form">
+        <input type="hidden" name="path" value="{{ path }}">
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input 
+                type="password" 
+                id="password" 
+                name="password"
+                placeholder="Enter stash password..."
+                required
+                autofocus
+            >
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Unlock</button>
+    </form>
+</div>
+{% endblock %}

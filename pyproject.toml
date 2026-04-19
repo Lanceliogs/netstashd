@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "netstashd"
+version = "0.1.0"
+description = "A local file sharing web application for LAN use"
+authors = ["Julien Lancelot <julienlancelot91@gmail.com>"]
+readme = "README.md"
+packages = [{include = "netstashd", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115"
+uvicorn = {extras = ["standard"], version = "^0.34"}
+sqlmodel = "^0.0.22"
+pydantic-settings = "^2.6"
+python-multipart = "^0.0.18"
+argon2-cffi = "^23.1"
+jinja2 = "^3.1"
+typer = {extras = ["all"], version = "^0.15"}
+httpx = "^0.28"
+aiofiles = "^24.1"
+itsdangerous = "^2.2"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.8"
+pytest = "^8.3"
+pytest-asyncio = "^0.24"
+
+[tool.poetry.scripts]
+netstashd = "netstashd.cli.main:app"
+netstashd-server = "netstashd.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

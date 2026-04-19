@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}netnetstashd{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="/">netnetstashd</a>
+        </div>
+        <div class="navbar-menu">
+            {% if is_admin %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/logout" class="nav-link">Logout</a>
+            {% else %}
+                <a href="/login" class="nav-link">Admin</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>netnetstashd &mdash; Simple file sharing for your LAN</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

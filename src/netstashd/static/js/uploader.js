@@ -1,0 +1,456 @@
+/**
+ * Multi-file uploader with global progress tracking
+ */
+class Uploader {
+    constructor(stashId, currentPath = '') {
+        this.stashId = stashId;
+        this.currentPath = currentPath;
+        
+        // Global tracking
+        this.totalFiles = 0;
+        this.completedFiles = 0;
+        this.totalBytes = 0;
+        this.uploadedBytes = 0;
+        this.errors = []; // [{name, error}]
+        this.activeUploads = new Map(); // uploadId -> {xhr, file, loaded}
+        this.uploadCounter = 0;
+        this.isUploading = false;
+        
+        // Speed tracking
+        this.startTime = 0;
+        this.lastTime = 0;
+        this.lastBytes = 0;
+        this.currentSpeed = 0;
+    }
+
+    /**
+     * Upload multiple files
+     */
+    uploadFiles(files) {
+        if (files.length === 0) return;
+        
+        this.startUpload();
+        
+        for (const file of files) {
+            const relativePath = file.webkitRelativePath || '';
+            this.queueFile(file, relativePath);
+        }
+    }
+
+    /**
+     * Handle dropped items (files or folders)
+     */
+    async uploadDroppedItems(items) {
+        const entries = [];
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const entry = item.webkitGetAsEntry();
+                if (entry) {
+                    entries.push(entry);
+                }
+            }
+        }
+        
+        if (entries.length === 0) return;
+        
+        this.startUpload();
+        
+        for (const entry of entries) {
+            await this.processEntry(entry, '');
+        }
+    }
+
+    /**
+     * Initialize upload UI
+     */
+    startUpload() {
+        if (!this.isUploading) {
+            this.isUploading = true;
+            this.totalFiles = 0;
+            this.completedFiles = 0;
+            this.totalBytes = 0;
+            this.uploadedBytes = 0;
+            this.errors = [];
+            this.activeUploads.clear();
+            
+            // Reset speed tracking
+            this.startTime = Date.now();
+            this.lastTime = this.startTime;
+            this.lastBytes = 0;
+            this.currentSpeed = 0;
+        }
+        
+        this.showProgress();
+    }
+
+    /**
+     * Recursively process a file system entry
+     */
+    async processEntry(entry, path) {
+        if (entry.isFile) {
+            const file = await this.getFile(entry);
+            const relativePath = path ? `${path}/${entry.name}` : '';
+            this.queueFile(file, relativePath);
+        } else if (entry.isDirectory) {
+            const dirPath = path ? `${path}/${entry.name}` : entry.name;
+            const entries = await this.readDirectory(entry);
+            for (const childEntry of entries) {
+                await this.processEntry(childEntry, dirPath);
+            }
+        }
+    }
+
+    /**
+     * Get File from FileSystemFileEntry
+     */
+    getFile(entry) {
+        return new Promise((resolve, reject) => {
+            entry.file(resolve, reject);
+        });
+    }
+
+    /**
+     * Read directory contents
+     */
+    readDirectory(dirEntry) {
+        return new Promise((resolve, reject) => {
+            const reader = dirEntry.createReader();
+            const entries = [];
+            
+            const readBatch = () => {
+                reader.readEntries((batch) => {
+                    if (batch.length === 0) {
+                        resolve(entries);
+                    } else {
+                        entries.push(...batch);
+                        readBatch();
+                    }
+                }, reject);
+            };
+            
+            readBatch();
+        });
+    }
+
+    /**
+     * Queue and upload a single file
+     */
+    queueFile(file, relativePath = '') {
+        const uploadId = ++this.uploadCounter;
+        const displayName = relativePath || file.name;
+        
+        this.totalFiles++;
+        this.totalBytes += file.size;
+        this.updateProgress();
+
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append('file', file);
+
+        this.activeUploads.set(uploadId, { xhr, file, loaded: 0, name: displayName });
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const upload = this.activeUploads.get(uploadId);
+                if (upload) {
+                    const delta = e.loaded - upload.loaded;
+                    this.uploadedBytes += delta;
+                    upload.loaded = e.loaded;
+                    this.updateProgress();
+                }
+            }
+        });
+
+        xhr.addEventListener('load', () => {
+            const upload = this.activeUploads.get(uploadId);
+            this.activeUploads.delete(uploadId);
+            
+            if (xhr.status >= 200 && xhr.status < 300) {
+                this.completedFiles++;
+            } else {
+                let errorMsg = 'Upload failed';
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    errorMsg = response.detail || errorMsg;
+                } catch (e) {}
+                this.errors.push({ name: upload?.name || 'Unknown file', error: errorMsg });
+                this.completedFiles++;
+            }
+            
+            this.updateProgress();
+            this.checkAllComplete();
+        });
+
+        xhr.addEventListener('error', () => {
+            const upload = this.activeUploads.get(uploadId);
+            this.activeUploads.delete(uploadId);
+            this.errors.push({ name: upload?.name || 'Unknown file', error: 'Network error' });
+            this.completedFiles++;
+            this.updateProgress();
+            this.checkAllComplete();
+        });
+
+        xhr.addEventListener('abort', () => {
+            this.activeUploads.delete(uploadId);
+            this.completedFiles++;
+            this.updateProgress();
+            this.checkAllComplete();
+        });
+
+        // Build upload path
+        let uploadPath = this.currentPath;
+        if (relativePath) {
+            const relativeDir = relativePath.substring(0, relativePath.lastIndexOf('/'));
+            if (relativeDir) {
+                uploadPath = uploadPath ? `${uploadPath}/${relativeDir}` : relativeDir;
+            }
+        }
+        
+        const url = uploadPath 
+            ? `/api/stashes/${this.stashId}/upload?path=${encodeURIComponent(uploadPath)}`
+            : `/api/stashes/${this.stashId}/upload`;
+        
+        xhr.open('POST', url);
+        xhr.send(formData);
+    }
+
+    /**
+     * Show progress UI
+     */
+    showProgress() {
+        const container = document.getElementById('upload-progress');
+        container.style.display = 'block';
+        container.innerHTML = `
+            <div class="upload-header">
+                <div class="upload-status">
+                    <span class="upload-status-text">Preparing upload...</span>
+                </div>
+                <button class="btn btn-small btn-secondary upload-cancel" onclick="uploader.cancel()">Cancel</button>
+            </div>
+            <div class="upload-progress-bar">
+                <div class="upload-progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="upload-stats">
+                <span class="upload-percent">0%</span>
+                <span class="upload-details">
+                    <span class="upload-speed"></span>
+                    <span class="upload-eta"></span>
+                    <span class="upload-size"></span>
+                </span>
+            </div>
+            <div class="upload-errors" style="display: none;">
+                <button class="upload-errors-toggle" onclick="uploader.toggleErrors()">
+                    <span class="upload-errors-icon">⚠</span>
+                    <span class="upload-errors-count"></span>
+                </button>
+                <div class="upload-errors-list" style="display: none;"></div>
+            </div>
+        `;
+    }
+
+    /**
+     * Update progress UI
+     */
+    updateProgress() {
+        const percent = this.totalBytes > 0 
+            ? Math.round((this.uploadedBytes / this.totalBytes) * 100) 
+            : 0;
+        
+        // Calculate speed (using rolling average)
+        const now = Date.now();
+        const timeDelta = (now - this.lastTime) / 1000; // seconds
+        
+        if (timeDelta >= 0.5) { // Update speed every 500ms
+            const bytesDelta = this.uploadedBytes - this.lastBytes;
+            const instantSpeed = bytesDelta / timeDelta;
+            
+            // Smooth the speed with exponential moving average
+            if (this.currentSpeed === 0) {
+                this.currentSpeed = instantSpeed;
+            } else {
+                this.currentSpeed = this.currentSpeed * 0.7 + instantSpeed * 0.3;
+            }
+            
+            this.lastTime = now;
+            this.lastBytes = this.uploadedBytes;
+        }
+        
+        const statusText = document.querySelector('.upload-status-text');
+        const progressFill = document.querySelector('.upload-progress-fill');
+        const percentText = document.querySelector('.upload-percent');
+        const sizeText = document.querySelector('.upload-size');
+        const speedText = document.querySelector('.upload-speed');
+        
+        if (statusText) {
+            statusText.textContent = `Uploading ${Math.min(this.completedFiles + 1, this.totalFiles)} of ${this.totalFiles} files`;
+        }
+        if (progressFill) {
+            progressFill.style.width = `${percent}%`;
+        }
+        if (percentText) {
+            percentText.textContent = `${percent}%`;
+        }
+        if (sizeText) {
+            sizeText.textContent = this.formatBytes(this.uploadedBytes);
+        }
+        if (speedText && this.currentSpeed > 0) {
+            speedText.textContent = `${this.formatBytes(this.currentSpeed)}/s`;
+        }
+        
+        // Calculate ETA
+        const etaText = document.querySelector('.upload-eta');
+        if (etaText && this.currentSpeed > 0) {
+            const remainingBytes = this.totalBytes - this.uploadedBytes;
+            const etaSeconds = remainingBytes / this.currentSpeed;
+            etaText.textContent = this.formatTime(etaSeconds);
+        }
+    }
+
+    /**
+     * Format seconds as human-readable time
+     */
+    formatTime(seconds) {
+        if (!isFinite(seconds) || seconds < 0) return '';
+        
+        seconds = Math.round(seconds);
+        
+        if (seconds < 60) {
+            return `${seconds}s left`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return secs > 0 ? `${mins}m ${secs}s left` : `${mins}m left`;
+        } else {
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return mins > 0 ? `${hours}h ${mins}m left` : `${hours}h left`;
+        }
+    }
+
+    /**
+     * Check if all uploads are complete
+     */
+    checkAllComplete() {
+        if (this.completedFiles >= this.totalFiles) {
+            this.showComplete();
+        }
+    }
+
+    /**
+     * Show completion UI
+     */
+    showComplete() {
+        this.isUploading = false;
+        
+        const statusText = document.querySelector('.upload-status-text');
+        const progressFill = document.querySelector('.upload-progress-fill');
+        const percentText = document.querySelector('.upload-percent');
+        const cancelBtn = document.querySelector('.upload-cancel');
+        
+        // Hide cancel button
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+        
+        const successCount = this.totalFiles - this.errors.length;
+        
+        if (progressFill) {
+            progressFill.style.width = '100%';
+            progressFill.classList.add(this.errors.length > 0 ? 'has-errors' : 'complete');
+        }
+        
+        if (statusText) {
+            if (this.errors.length === 0) {
+                statusText.innerHTML = `<span class="upload-success">✓</span> ${successCount} file${successCount !== 1 ? 's' : ''} uploaded`;
+            } else {
+                statusText.innerHTML = `<span class="upload-success">✓</span> ${successCount} uploaded`;
+            }
+        }
+        
+        if (percentText) {
+            percentText.textContent = 'Done';
+        }
+        
+        // Show errors if any
+        if (this.errors.length > 0) {
+            const errorsSection = document.querySelector('.upload-errors');
+            const errorsCount = document.querySelector('.upload-errors-count');
+            const errorsList = document.querySelector('.upload-errors-list');
+            
+            if (errorsSection) {
+                errorsSection.style.display = 'block';
+            }
+            if (errorsCount) {
+                errorsCount.textContent = `${this.errors.length} failed`;
+            }
+            if (errorsList) {
+                errorsList.innerHTML = this.errors.map(e => 
+                    `<div class="upload-error-item">
+                        <span class="upload-error-name">${this.escapeHtml(e.name)}</span>
+                        <span class="upload-error-msg">${this.escapeHtml(e.error)}</span>
+                    </div>`
+                ).join('');
+            }
+        } else {
+            // Auto-refresh on success
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        }
+    }
+
+    /**
+     * Toggle error list visibility
+     */
+    toggleErrors() {
+        const list = document.querySelector('.upload-errors-list');
+        if (list) {
+            list.style.display = list.style.display === 'none' ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Cancel all pending uploads
+     */
+    cancelAll() {
+        for (const { xhr } of this.activeUploads.values()) {
+            xhr.abort();
+        }
+        this.activeUploads.clear();
+    }
+
+    /**
+     * Cancel upload and hide UI
+     */
+    cancel() {
+        this.cancelAll();
+        this.isUploading = false;
+        
+        const container = document.getElementById('upload-progress');
+        container.style.display = 'none';
+        
+        // Refresh to show any partially uploaded files
+        if (this.completedFiles > 0) {
+            window.location.reload();
+        }
+    }
+
+    /**
+     * Format bytes as human-readable string
+     */
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+    }
+
+    /**
+     * Escape HTML entities
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
