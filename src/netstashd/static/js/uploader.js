@@ -21,6 +21,21 @@ class Uploader {
         this.lastTime = 0;
         this.lastBytes = 0;
         this.currentSpeed = 0;
+        
+        // Bind the beforeunload handler so we can add/remove it
+        this._beforeUnloadHandler = this._handleBeforeUnload.bind(this);
+    }
+
+    /**
+     * Warn user before leaving page during upload
+     */
+    _handleBeforeUnload(e) {
+        if (this.isUploading) {
+            e.preventDefault();
+            // Modern browsers ignore custom messages, but we still need to set returnValue
+            e.returnValue = 'Upload in progress. Are you sure you want to leave?';
+            return e.returnValue;
+        }
     }
 
     /**
@@ -78,6 +93,9 @@ class Uploader {
             this.lastTime = this.startTime;
             this.lastBytes = 0;
             this.currentSpeed = 0;
+            
+            // Prevent accidental navigation during upload
+            window.addEventListener('beforeunload', this._beforeUnloadHandler);
         }
         
         this.showProgress();
@@ -341,6 +359,7 @@ class Uploader {
      */
     showComplete() {
         this.isUploading = false;
+        window.removeEventListener('beforeunload', this._beforeUnloadHandler);
         
         const statusText = document.querySelector('.upload-status-text');
         const progressFill = document.querySelector('.upload-progress-fill');
@@ -425,6 +444,7 @@ class Uploader {
     cancel() {
         this.cancelAll();
         this.isUploading = false;
+        window.removeEventListener('beforeunload', this._beforeUnloadHandler);
         
         const container = document.getElementById('upload-progress');
         container.style.display = 'none';

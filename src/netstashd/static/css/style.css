@@ -94,7 +94,7 @@ a:hover {
 }
 
 .navbar-brand a::before {
-    content: ">";
+    content: "[>]";
     color: var(--color-primary);
     margin-right: 6px;
     font-weight: 700;
@@ -144,7 +144,7 @@ a:hover {
 }
 
 .hero h1::before {
-    content: "> ";
+    content: "[>] ";
     color: var(--color-primary);
     font-weight: 700;
 }
