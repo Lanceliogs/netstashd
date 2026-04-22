@@ -24,7 +24,7 @@ from netstashd.secrets import (
     rotate_session_secret,
 )
 from netstashd.db import get_session
-from netstashd.models import FileInfo, Stash, StashInfo
+from netstashd.models import FileInfo, Stash, StashInfo, ensure_utc_aware, utc_now
 from netstashd.storage import (
     get_dir_size,
     get_remaining_global_space,
@@ -287,7 +287,7 @@ async def list_expired_stashes(session: Session = Depends(get_session)):
         })
 
     # Sort by expiration date (oldest first)
-    result.sort(key=lambda x: x["stash"].expires_at)
+    result.sort(key=lambda x: ensure_utc_aware(x["stash"].expires_at) or utc_now())
     return result
 
 

@@ -14,7 +14,7 @@ from netstashd.config import settings
 from netstashd.logging import get_logger
 from netstashd.secrets import get_admin_secret
 from netstashd.db import get_session
-from netstashd.models import Stash, StashCreate, StashInfo, utc_now
+from netstashd.models import Stash, StashCreate, StashInfo, ensure_utc_aware, utc_now
 from netstashd.storage import ensure_stash_dir, get_dir_size, get_remaining_global_space, get_stash_path
 from netstashd.templates import templates
 
@@ -136,7 +136,7 @@ async def dashboard(
             active_stashes.append(StashInfo.from_stash(stash))
 
     # Sort expired by expiration date (oldest first)
-    expired_stashes.sort(key=lambda x: x["info"].expires_at or datetime.min)
+    expired_stashes.sort(key=lambda x: ensure_utc_aware(x["info"].expires_at) or utc_now())
 
     return templates.TemplateResponse(
         request,
