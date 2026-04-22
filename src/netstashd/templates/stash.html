@@ -25,6 +25,7 @@
 
 <div class="stash-actions">
     <button class="btn btn-secondary" onclick="showNewFolderModal()">New Folder</button>
+    <button class="btn btn-secondary" onclick="generateAccessCode()">Get Code</button>
     {% if path %}
     <a href="/s/{{ stash.id }}/download/{{ path }}" class="btn btn-secondary">Download ZIP</a>
     {% endif %}
@@ -176,6 +177,23 @@
                 <button type="submit" class="btn btn-primary">Rename</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div id="code-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>Access Code</h3>
+        <div class="code-display">
+            <div class="code-digits" id="code-digits">------</div>
+            <div class="code-countdown" id="code-countdown">
+                <span class="countdown-text">Expires in <span id="countdown-seconds">--</span>s</span>
+            </div>
+        </div>
+        <p class="text-muted code-instructions">Enter this code on another device to access this stash</p>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="hideCodeModal()">Close</button>
+            <button type="button" class="btn btn-primary" onclick="copyCode()">Copy Code</button>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -455,8 +473,79 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         hideModal('new-folder-modal');
         hideModal('rename-modal');
+        hideCodeModal();
         previewPanel.close();
     }
 });
+
+// Access code functionality
+let codeCountdownInterval = null;
+let currentCode = null;
+
+function generateAccessCode() {
+    fetch(`/s/${stashId}/code`, { method: 'POST' })
+        .then(r => {
+            if (!r.ok) throw new Error('Failed to generate code');
+            return r.json();
+        })
+        .then(data => {
+            currentCode = data.code;
+            showCodeModal(data.code, data.ttl_seconds);
+        })
+        .catch(err => {
+            showToast('Failed to generate code', 'error');
+        });
+}
+
+function showCodeModal(code, ttlSeconds) {
+    document.getElementById('code-digits').textContent = code;
+    document.getElementById('code-modal').style.display = 'flex';
+    
+    let remaining = ttlSeconds;
+    updateCountdown(remaining);
+    
+    if (codeCountdownInterval) clearInterval(codeCountdownInterval);
+    
+    codeCountdownInterval = setInterval(() => {
+        remaining--;
+        updateCountdown(remaining);
+        
+        if (remaining <= 0) {
+            clearInterval(codeCountdownInterval);
+            codeCountdownInterval = null;
+            document.getElementById('code-digits').textContent = '------';
+            document.getElementById('countdown-seconds').textContent = '0';
+            document.querySelector('.code-countdown').classList.add('expired');
+        }
+    }, 1000);
+}
+
+function updateCountdown(seconds) {
+    document.getElementById('countdown-seconds').textContent = seconds;
+    
+    const countdown = document.querySelector('.code-countdown');
+    if (seconds <= 10) {
+        countdown.classList.add('warning');
+    } else {
+        countdown.classList.remove('warning');
+    }
+}
+
+function hideCodeModal() {
+    document.getElementById('code-modal').style.display = 'none';
+    if (codeCountdownInterval) {
+        clearInterval(codeCountdownInterval);
+        codeCountdownInterval = null;
+    }
+    document.querySelector('.code-countdown').classList.remove('warning', 'expired');
+}
+
+function copyCode() {
+    if (currentCode) {
+        navigator.clipboard.writeText(currentCode).then(() => {
+            showToast('Code copied to clipboard');
+        });
+    }
+}
 </script>
 {% endblock %}

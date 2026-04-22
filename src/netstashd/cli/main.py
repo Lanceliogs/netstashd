@@ -14,7 +14,9 @@ app = typer.Typer(
     help="netstashd CLI - Manage stashes via the server API",
 )
 secrets_app = typer.Typer(help="Manage API keys and secrets")
+cleanup_app = typer.Typer(help="Cleanup expired stashes")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(cleanup_app, name="cleanup")
 
 console = Console()
 
@@ -334,6 +336,195 @@ def show_api_key():
             console.print("[dim]Source: STASHD_API_KEY environment variable[/dim]")
     except typer.Exit:
         pass
+
+
+# --- Cleanup commands ---
+
+
+def parse_size(size_str: str) -> int:
+    """Parse a human-readable size string into bytes."""
+    import re
+    size_str = size_str.strip().upper()
+    
+    match = re.match(r"^([\d.]+)\s*(B|KB|MB|GB|TB)?$", size_str)
+    if not match:
+        raise typer.BadParameter(f"Invalid size format: {size_str}")
+    
+    number = float(match.group(1))
+    unit = match.group(2) or "B"
+    
+    multipliers = {
+        "B": 1,
+        "KB": 1024,
+        "MB": 1024 ** 2,
+        "GB": 1024 ** 3,
+        "TB": 1024 ** 4,
+    }
+    
+    return int(number * multipliers[unit])
+
+
+@cleanup_app.command("run")
+def cleanup_run(
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be deleted without deleting"),
+):
+    """Run cleanup of stashes past their grace period.
+    
+    This deletes stashes where expiration + grace period has elapsed.
+    """
+    response = make_request("POST", f"/api/cleanup?dry_run={str(dry_run).lower()}")
+    
+    if response.status_code != 200:
+        console.print(f"[red]Error:[/red] {response.text}")
+        raise typer.Exit(1)
+    
+    data = response.json()
+    
+    if dry_run:
+        console.print("[yellow]DRY RUN - no changes made[/yellow]")
+    
+    if data["deleted_count"] == 0:
+        console.print("No stashes ready for cleanup.")
+    else:
+        action = "Would delete" if dry_run else "Deleted"
+        console.print(f"[green]{action} {data['deleted_count']} stash(es)[/green]")
+        console.print(f"[bold]Space freed:[/bold] {format_bytes(data['freed_bytes'])}")
+        
+        if data["stash_ids"]:
+            console.print()
+            console.print("[bold]Stash IDs:[/bold]")
+            for stash_id in data["stash_ids"]:
+                console.print(f"  {stash_id}")
+
+
+@cleanup_app.command("free-space")
+def cleanup_free_space(
+    target: str = typer.Argument(..., help="Target space to free (e.g., '1GB', '500MB')"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be deleted without deleting"),
+):
+    """Delete oldest expired stashes until target space is freed.
+    
+    This deletes expired stashes (even those still in grace period),
+    starting with the oldest, until the target space is freed.
+    """
+    try:
+        target_bytes = parse_size(target)
+    except typer.BadParameter as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+    
+    response = make_request(
+        "POST",
+        f"/api/cleanup/free-space?dry_run={str(dry_run).lower()}",
+        json={"target_bytes": target_bytes},
+    )
+    
+    if response.status_code != 200:
+        console.print(f"[red]Error:[/red] {response.text}")
+        raise typer.Exit(1)
+    
+    data = response.json()
+    
+    if dry_run:
+        console.print("[yellow]DRY RUN - no changes made[/yellow]")
+    
+    console.print(f"[bold]Target:[/bold] {format_bytes(data['target_bytes'])}")
+    
+    if data["deleted_count"] == 0:
+        console.print("[yellow]No expired stashes available to free space.[/yellow]")
+    else:
+        action = "Would free" if dry_run else "Freed"
+        console.print(f"[green]{action} {format_bytes(data['freed_bytes'])} by deleting {data['deleted_count']} stash(es)[/green]")
+        
+        if data["freed_bytes"] < data["target_bytes"]:
+            console.print(f"[yellow]Warning: Could not reach target. No more expired stashes available.[/yellow]")
+
+
+@cleanup_app.command("purge")
+def cleanup_purge(
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be deleted without deleting"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Delete ALL expired stashes immediately, ignoring grace period.
+    
+    Use with caution - this removes all expired stashes regardless of
+    how much grace time remains.
+    """
+    if not force and not dry_run:
+        confirm = typer.confirm("This will delete ALL expired stashes. Continue?")
+        if not confirm:
+            raise typer.Abort()
+    
+    response = make_request("POST", f"/api/cleanup/purge-expired?dry_run={str(dry_run).lower()}")
+    
+    if response.status_code != 200:
+        console.print(f"[red]Error:[/red] {response.text}")
+        raise typer.Exit(1)
+    
+    data = response.json()
+    
+    if dry_run:
+        console.print("[yellow]DRY RUN - no changes made[/yellow]")
+    
+    if data["deleted_count"] == 0:
+        console.print("No expired stashes to purge.")
+    else:
+        action = "Would purge" if dry_run else "Purged"
+        console.print(f"[green]{action} {data['deleted_count']} stash(es)[/green]")
+        console.print(f"[bold]Space freed:[/bold] {format_bytes(data['freed_bytes'])}")
+
+
+@cleanup_app.command("list")
+def cleanup_list():
+    """List all expired stashes (in grace period or ready for cleanup)."""
+    response = make_request("GET", "/api/stashes/expired")
+    
+    if response.status_code != 200:
+        console.print(f"[red]Error:[/red] {response.text}")
+        raise typer.Exit(1)
+    
+    stashes = response.json()
+    
+    if not stashes:
+        console.print("No expired stashes.")
+        return
+    
+    table = Table(title="Expired Stashes")
+    table.add_column("Name", style="cyan")
+    table.add_column("ID", style="dim")
+    table.add_column("Disk Usage")
+    table.add_column("Expired")
+    table.add_column("Grace Remaining")
+    table.add_column("Status")
+    
+    for item in stashes:
+        stash = item["stash"]
+        grace_seconds = item["grace_remaining_seconds"]
+        
+        if item["past_grace"]:
+            grace_str = "-"
+            status = "[red]Ready for cleanup[/red]"
+        else:
+            hours = grace_seconds // 3600
+            days = hours // 24
+            if days > 0:
+                grace_str = f"{days}d {hours % 24}h"
+            else:
+                grace_str = f"{hours}h"
+            status = "[yellow]In grace period[/yellow]"
+        
+        expires = stash.get("expires_at", "")[:10] if stash.get("expires_at") else "Never"
+        
+        table.add_row(
+            stash["name"],
+            stash["id"],
+            format_bytes(item["disk_size"]),
+            expires,
+            grace_str,
+            status,
+        )
+    
+    console.print(table)
 
 
 if __name__ == "__main__":

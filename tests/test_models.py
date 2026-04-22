@@ -1,10 +1,10 @@
 """Tests for database models."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta, timezone
 
 import pytest
 
-from netstashd.models import Stash, StashCreate, StashInfo
+from netstashd.models import Stash, StashCreate, StashInfo, utc_now
 
 
 class TestStash:
@@ -36,13 +36,13 @@ class TestStash:
 
     def test_is_expired_future(self):
         """Test is_expired when expiry is in the future."""
-        future = datetime.utcnow() + timedelta(days=7)
+        future = utc_now() + timedelta(days=7)
         stash = Stash(name="Test", max_size_bytes=1024, expires_at=future)
         assert stash.is_expired is False
 
     def test_is_expired_past(self):
         """Test is_expired when expiry is in the past."""
-        past = datetime.utcnow() - timedelta(days=1)
+        past = utc_now() - timedelta(days=1)
         stash = Stash(name="Test", max_size_bytes=1024, expires_at=past)
         assert stash.is_expired is True
 
@@ -75,6 +75,63 @@ class TestStash:
         """Test remaining_bytes when used exceeds max (edge case)."""
         stash = Stash(name="Test", max_size_bytes=1024, used_bytes=2000)
         assert stash.remaining_bytes == 0
+
+    def test_should_cleanup_not_expired(self):
+        """Test should_cleanup when stash is not expired."""
+        future = utc_now() + timedelta(days=7)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=future)
+        assert stash.should_cleanup(grace_days=7) is False
+
+    def test_should_cleanup_no_expiry(self):
+        """Test should_cleanup when stash has no expiry."""
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=None)
+        assert stash.should_cleanup(grace_days=7) is False
+
+    def test_should_cleanup_within_grace(self):
+        """Test should_cleanup when expired but within grace period."""
+        # Expired 3 days ago, grace period is 7 days
+        past = utc_now() - timedelta(days=3)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=past)
+        assert stash.should_cleanup(grace_days=7) is False
+
+    def test_should_cleanup_past_grace(self):
+        """Test should_cleanup when past grace period."""
+        # Expired 10 days ago, grace period is 7 days
+        past = utc_now() - timedelta(days=10)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=past)
+        assert stash.should_cleanup(grace_days=7) is True
+
+    def test_grace_remaining_not_expired(self):
+        """Test grace_remaining when stash is not expired."""
+        future = utc_now() + timedelta(days=7)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=future)
+        assert stash.grace_remaining(grace_days=7) is None
+
+    def test_grace_remaining_no_expiry(self):
+        """Test grace_remaining when stash has no expiry."""
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=None)
+        assert stash.grace_remaining(grace_days=7) is None
+
+    def test_grace_remaining_within_grace(self):
+        """Test grace_remaining when within grace period."""
+        # Expired 3 days ago, grace period is 7 days -> 4 days remaining
+        past = utc_now() - timedelta(days=3)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=past)
+        remaining = stash.grace_remaining(grace_days=7)
+
+        assert remaining is not None
+        # Should be approximately 4 days
+        assert 3.9 <= remaining.total_seconds() / 86400 <= 4.1
+
+    def test_grace_remaining_past_grace(self):
+        """Test grace_remaining when past grace period."""
+        # Expired 10 days ago, grace period is 7 days
+        past = utc_now() - timedelta(days=10)
+        stash = Stash(name="Test", max_size_bytes=1024, expires_at=past)
+        remaining = stash.grace_remaining(grace_days=7)
+
+        assert remaining is not None
+        assert remaining.total_seconds() == 0
 
 
 class TestStashCreate:

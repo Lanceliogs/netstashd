@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Cleanup settings
+    expired_grace_days: int = 7  # Days to keep files after stash expires
+    cleanup_on_startup: bool = True  # Run cleanup when server starts
+    cleanup_interval_hours: int = 6  # Background cleanup interval (0 = disabled)
+
+    # Temporary access codes
+    code_ttl_seconds: int = 120  # How long access codes are valid
+
     @property
     def db_path(self) -> Path:
         return self.share_root / "stashes.db"

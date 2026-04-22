@@ -63,6 +63,10 @@ Set these in `.env` or as environment variables:
 | `HOST` | Server bind address | `0.0.0.0` |
 | `PORT` | Server port | `8000` |
 | `SESSION_MAX_AGE_DAYS` | How long session cookies persist in browser | 365 |
+| `EXPIRED_GRACE_DAYS` | Days to keep files after stash expires | 7 |
+| `CLEANUP_ON_STARTUP` | Run cleanup when server starts | `true` |
+| `CLEANUP_INTERVAL_HOURS` | Background cleanup interval (0 = disabled) | 6 |
+| `CODE_TTL_SECONDS` | How long temporary access codes are valid | 120 |
 
 **Size formats:** All `*_BYTES` settings accept human-readable sizes: `100MB`, `1.5GB`, `10 GB`, or raw bytes.
 
@@ -104,6 +108,25 @@ netstashd delete <stash-id>
 netstashd status
 ```
 
+### Cleanup Commands
+
+```bash
+# List expired stashes
+netstashd cleanup list
+
+# Run cleanup (delete stashes past grace period)
+netstashd cleanup run
+netstashd cleanup run --dry-run  # Preview without deleting
+
+# Free specific amount of space (deletes oldest expired first)
+netstashd cleanup free-space 1GB
+netstashd cleanup free-space 500MB --dry-run
+
+# Purge ALL expired stashes (ignores grace period)
+netstashd cleanup purge
+netstashd cleanup purge --force  # Skip confirmation
+```
+
 ### Secrets Management
 
 ```bash
@@ -141,6 +164,34 @@ netstashd secrets show-api-key
 | `/s/<id>/download/<path>` | Download file or folder (ZIP) |
 | `/dashboard` | Admin dashboard |
 | `/login` | Admin login |
+
+## Access Codes
+
+Access codes make it easy to open a stash on another device without typing the full 32-character stash ID.
+
+1. Open a stash on Device A
+2. Click **"Get Code"** to generate a 6-digit code (valid for 2 minutes by default)
+3. On Device B, go to the homepage and enter the code
+4. You're redirected to the stash
+
+Codes are stored in memory and expire automatically. They're perfect for quickly sharing a stash URL across your own devices.
+
+## Stash Lifecycle & Cleanup
+
+Stashes with a TTL go through these stages:
+
+1. **Active**: Stash is accessible and files can be uploaded/downloaded
+2. **Expired**: TTL reached - stash returns 410 Gone, but files remain on disk
+3. **Grace Period**: Files are kept for `EXPIRED_GRACE_DAYS` (default: 7 days)
+4. **Cleanup**: After grace period, automatic cleanup deletes files and DB entry
+
+This grace period allows you to recover files from expired stashes if needed. You can:
+- **View expired stashes** in the admin dashboard
+- **Delete immediately** using "Delete Now" button or CLI
+- **Purge all** expired stashes at once
+- **Free space** by deleting oldest expired stashes first
+
+Automatic cleanup runs on startup (if `CLEANUP_ON_STARTUP=true`) and periodically (every `CLEANUP_INTERVAL_HOURS` hours).
 
 ## Security Notes
 

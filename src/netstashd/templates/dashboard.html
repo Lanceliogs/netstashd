@@ -60,7 +60,7 @@
 </div>
 
 <div class="card">
-    <h2>Stashes</h2>
+    <h2>Active Stashes</h2>
     
     {% if stashes %}
     <table class="stash-table">
@@ -114,7 +114,72 @@
         </tbody>
     </table>
     {% else %}
-    <p class="empty-state">No stashes yet. Create one above!</p>
+    <p class="empty-state">No active stashes. Create one above!</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-header-row">
+        <h2>Expired Stashes</h2>
+        {% if expired_stashes %}
+        <button class="btn btn-small btn-danger" onclick="purgeAllExpired()">
+            Purge All Expired
+        </button>
+        {% endif %}
+    </div>
+    <p class="text-muted">
+        Expired stashes are inaccessible but files remain on disk for {{ expired_grace_days }} days.
+    </p>
+    
+    {% if expired_stashes %}
+    <table class="stash-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Disk Usage</th>
+                <th>Expired</th>
+                <th>Grace Remaining</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in expired_stashes %}
+            <tr class="{% if item.past_grace %}row-past-grace{% endif %}">
+                <td>
+                    {{ item.info.name }}
+                    {% if item.info.is_password_protected %}
+                    <span class="badge badge-locked" title="Password protected">🔒</span>
+                    {% endif %}
+                    <span class="badge badge-expired">Expired</span>
+                </td>
+                <td>
+                    <code class="stash-id" title="Click to copy" onclick="copyToClipboard('{{ item.info.id }}')">
+                        {{ item.info.id[:8] }}...
+                    </code>
+                </td>
+                <td>{{ item.disk_size | format_bytes_short }}</td>
+                <td>{{ item.info.expires_at.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    {% if item.past_grace %}
+                        <span class="badge badge-danger">Ready for cleanup</span>
+                    {% elif item.grace_days_remaining > 0 %}
+                        {{ item.grace_days_remaining }}d remaining
+                    {% else %}
+                        {{ item.grace_hours_remaining }}h remaining
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-small btn-danger" onclick="deleteStash('{{ item.info.id }}', '{{ item.info.name }}')">
+                        Delete Now
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No expired stashes.</p>
     {% endif %}
 </div>
 {% endblock %}
@@ -128,7 +193,7 @@ function copyToClipboard(text) {
 }
 
 function deleteStash(id, name) {
-    if (confirm(`Delete stash "${name}"? This cannot be undone.`)) {
+    if (confirm(`Delete stash "${name}"? This will remove all files and cannot be undone.`)) {
         fetch(`/s/${id}`, { method: 'DELETE' })
             .then(r => {
                 if (r.ok) {
@@ -138,6 +203,30 @@ function deleteStash(id, name) {
                 }
             });
     }
+}
+
+function purgeAllExpired() {
+    if (confirm('Delete ALL expired stashes? This will remove all files and cannot be undone.')) {
+        fetch('/api/cleanup/purge-expired', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.deleted_count > 0) {
+                    showToast(`Purged ${data.deleted_count} stashes, freed ${formatBytes(data.freed_bytes)}`);
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showToast('No stashes to purge');
+                }
+            })
+            .catch(() => showToast('Failed to purge stashes', 'error'));
+    }
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 function showToast(message, type = 'success') {

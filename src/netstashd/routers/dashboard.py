@@ -1,19 +1,21 @@
 """Dashboard routes for stash management."""
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from netstashd.auth import AdminRequired, add_stash_to_session, get_my_stashes, hash_password
+from netstashd.cleanup import get_expired_stashes
+from netstashd.codes import code_store
 from netstashd.config import settings
 from netstashd.logging import get_logger
 from netstashd.secrets import get_admin_secret
 from netstashd.db import get_session
-from netstashd.models import Stash, StashCreate, StashInfo
-from netstashd.storage import ensure_stash_dir, get_remaining_global_space
+from netstashd.models import Stash, StashCreate, StashInfo, utc_now
+from netstashd.storage import ensure_stash_dir, get_dir_size, get_remaining_global_space, get_stash_path
 from netstashd.templates import templates
 
 log = get_logger(__name__)
@@ -77,6 +79,31 @@ async def logout(request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 
+@router.post("/go")
+async def go_to_stash(
+    request: Request,
+    stash_id: str = Form(None),
+    code: str = Form(None),
+):
+    """Navigate to a stash by ID or temporary code."""
+    # Try code first if provided
+    if code and code.strip():
+        code = code.strip()
+        entry = code_store.lookup(code, consume=True)
+        if entry:
+            return RedirectResponse(url=f"/s/{entry.stash_id}", status_code=303)
+        # Invalid code - redirect back with error
+        return RedirectResponse(url="/?error=invalid_code", status_code=303)
+
+    # Try stash ID
+    if stash_id and stash_id.strip():
+        stash_id = stash_id.strip()
+        return RedirectResponse(url=f"/s/{stash_id}", status_code=303)
+
+    # Nothing provided
+    return RedirectResponse(url="/", status_code=303)
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
@@ -84,17 +111,43 @@ async def dashboard(
     _: None = AdminRequired,
 ):
     """Admin dashboard showing all stashes."""
-    stashes = session.exec(select(Stash).order_by(Stash.created_at.desc())).all()
-    stash_infos = [StashInfo.from_stash(s) for s in stashes]
+    all_stashes = session.exec(select(Stash).order_by(Stash.created_at.desc())).all()
+
+    # Separate active and expired stashes
+    active_stashes = []
+    expired_stashes = []
+
+    for stash in all_stashes:
+        if stash.is_expired:
+            # Calculate grace period info
+            grace_remaining = stash.grace_remaining(settings.expired_grace_days)
+            stash_path = get_stash_path(stash.id)
+            disk_size = get_dir_size(stash_path) if stash_path.exists() else 0
+
+            expired_stashes.append({
+                "info": StashInfo.from_stash(stash),
+                "grace_remaining": grace_remaining,
+                "grace_days_remaining": grace_remaining.days if grace_remaining else 0,
+                "grace_hours_remaining": int(grace_remaining.total_seconds() // 3600) if grace_remaining else 0,
+                "disk_size": disk_size,
+                "past_grace": grace_remaining is not None and grace_remaining.total_seconds() <= 0,
+            })
+        else:
+            active_stashes.append(StashInfo.from_stash(stash))
+
+    # Sort expired by expiration date (oldest first)
+    expired_stashes.sort(key=lambda x: x["info"].expires_at or datetime.min)
 
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
-            "stashes": stash_infos,
+            "stashes": active_stashes,
+            "expired_stashes": expired_stashes,
             "max_stash_size_bytes": settings.max_stash_size_bytes,
             "max_ttl_days": settings.max_ttl_days,
             "remaining_global_bytes": get_remaining_global_space(),
+            "expired_grace_days": settings.expired_grace_days,
         },
     )
 
@@ -138,7 +191,7 @@ async def create_stash(
     if ttl_days is not None:
         if ttl_days > settings.max_ttl_days:
             raise HTTPException(400, f"TTL exceeds maximum of {settings.max_ttl_days} days")
-        expires_at = datetime.utcnow() + timedelta(days=ttl_days)
+        expires_at = utc_now() + timedelta(days=ttl_days)
     else:
         expires_at = None
 
@@ -189,7 +242,7 @@ async def create_stash_public(
     if ttl_days > settings.guest_max_ttl_days:
         raise HTTPException(400, f"TTL exceeds maximum of {settings.guest_max_ttl_days} days")
 
-    expires_at = datetime.utcnow() + timedelta(days=ttl_days)
+    expires_at = utc_now() + timedelta(days=ttl_days)
 
     stash = Stash(
         name=name,

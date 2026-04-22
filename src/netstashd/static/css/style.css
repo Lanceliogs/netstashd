@@ -960,6 +960,135 @@ tr:hover .action-menu-trigger {
     margin: 0;
 }
 
+/* Card header row for title + actions */
+.card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.card-header-row h2 {
+    margin: 0;
+}
+
+/* Badge styles */
+.badge-expired {
+    background: var(--color-warning);
+    color: var(--color-bg);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 8px;
+}
+
+.badge-danger {
+    background: var(--color-danger);
+    color: white;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* Row styling for past grace period */
+.row-past-grace {
+    background: rgba(244, 63, 94, 0.05);
+}
+
+.row-past-grace:hover {
+    background: rgba(244, 63, 94, 0.1);
+}
+
+/* Access code modal */
+.code-display {
+    text-align: center;
+    padding: 24px 0;
+}
+
+.code-digits {
+    font-family: var(--font-mono);
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: 8px;
+    color: var(--color-primary);
+    margin-bottom: 16px;
+}
+
+.code-countdown {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--color-text-muted);
+    transition: color 0.3s ease;
+}
+
+.code-countdown.warning {
+    color: var(--color-warning);
+}
+
+.code-countdown.expired {
+    color: var(--color-danger);
+}
+
+.code-countdown.expired .countdown-text::before {
+    content: "Code expired";
+}
+
+.code-countdown.expired #countdown-seconds,
+.code-countdown.expired .countdown-text {
+    display: none;
+}
+
+.code-countdown.expired::after {
+    content: "Code expired";
+    color: var(--color-danger);
+}
+
+.code-instructions {
+    text-align: center;
+    font-size: 13px;
+    margin: 0 0 8px;
+}
+
+/* Code entry on index page */
+.code-entry {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.code-entry input {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    letter-spacing: 4px;
+    text-align: center;
+    width: 140px;
+}
+
+.code-entry input::placeholder {
+    letter-spacing: 2px;
+    font-size: 14px;
+}
+
+.divider-text {
+    color: var(--color-text-muted);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.code-entry-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
 /* ===========================================
    Two-column stash layout with preview panel
    =========================================== */

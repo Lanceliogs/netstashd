@@ -83,13 +83,15 @@ def admin_client(db_engine, temp_share_root: Path) -> Generator[TestClient, None
 @pytest.fixture
 def sample_stash(db_engine, temp_share_root: Path) -> Stash:
     """Create a sample stash for testing."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta, timezone
+
+    from netstashd.models import utc_now
 
     stash = Stash(
         id="test1234567890abcdef1234567890ab",
         name="Test Stash",
         max_size_bytes=100 * 1024 * 1024,
-        expires_at=datetime.utcnow() + timedelta(days=7),
+        expires_at=utc_now() + timedelta(days=7),
     )
 
     with Session(db_engine) as session:
@@ -106,16 +108,17 @@ def sample_stash(db_engine, temp_share_root: Path) -> Stash:
 @pytest.fixture
 def password_protected_stash(db_engine, temp_share_root: Path) -> Stash:
     """Create a password-protected stash for testing."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta, timezone
 
     from netstashd.auth import hash_password
+    from netstashd.models import utc_now
 
     stash = Stash(
         id="protectedstash1234567890abcdef",
         name="Protected Stash",
         password_hash=hash_password("secret123"),
         max_size_bytes=50 * 1024 * 1024,
-        expires_at=datetime.utcnow() + timedelta(days=3),
+        expires_at=utc_now() + timedelta(days=3),
     )
 
     with Session(db_engine) as session:
