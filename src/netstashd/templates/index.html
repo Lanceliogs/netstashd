@@ -10,20 +10,38 @@
 
 <div class="card centered-card">
     <h2>Open a Stash</h2>
-    <p>Enter a stash ID to access shared files</p>
+    <p>Enter a stash ID or a 6-digit access code</p>
     
-    <form action="/s/" method="get" class="stash-form" id="stash-form">
+    {% if request.query_params.get('error') == 'invalid_code' %}
+    <div class="alert alert-error">Invalid or expired code</div>
+    {% endif %}
+    
+    <form action="/go" method="post" class="stash-form" id="stash-form">
         <div class="input-group">
             <input 
                 type="text" 
                 id="stash-id" 
-                name="id"
+                name="stash_id"
                 placeholder="Enter stash ID..."
                 pattern="[a-f0-9]{32}"
                 title="Stash ID should be a 32-character hex string"
-                required
             >
             <button type="submit" class="btn btn-primary">Open</button>
+        </div>
+        <div class="code-entry-row">
+            <span class="divider-text">or</span>
+            <div class="code-entry">
+                <input 
+                    type="text" 
+                    id="access-code" 
+                    name="code"
+                    placeholder="000000"
+                    pattern="[0-9]{6}"
+                    maxlength="6"
+                    title="6-digit access code"
+                >
+                <button type="submit" class="btn btn-secondary">Go</button>
+            </div>
         </div>
     </form>
 </div>
@@ -133,12 +151,18 @@
 
 {% block scripts %}
 <script>
-document.getElementById('stash-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const id = document.getElementById('stash-id').value.trim();
-    if (id) {
-        window.location.href = '/s/' + id;
-    }
+// Auto-format code input (numbers only)
+document.getElementById('access-code').addEventListener('input', function(e) {
+    this.value = this.value.replace(/\D/g, '').slice(0, 6);
+});
+
+// Clear the other input when typing
+document.getElementById('stash-id').addEventListener('input', function() {
+    document.getElementById('access-code').value = '';
+});
+
+document.getElementById('access-code').addEventListener('input', function() {
+    document.getElementById('stash-id').value = '';
 });
 </script>
 {% endblock %}

@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from netstashd.auth import add_stash_to_session, verify_password
+from netstashd.codes import code_store
+from netstashd.config import settings
 from netstashd.logging import get_logger
 from netstashd.secrets import get_admin_secret
 from netstashd.db import get_session
@@ -89,6 +91,9 @@ async def view_stash(
             "stash_auth.html",
             {"stash": StashInfo.from_stash(stash), "path": path},
         )
+
+    # Track this stash in user's session so it appears in "My Stashes"
+    add_stash_to_session(request, stash_id)
 
     # List directory
     files = list_directory(stash_id, path)
@@ -179,13 +184,17 @@ async def delete_stash(
     stash_id: str,
     session: Session = Depends(get_session),
 ):
-    """Delete a stash (admin only)."""
+    """Delete a stash (admin only). Works for both active and expired stashes."""
     if not request.session.get("is_admin"):
         api_key = request.headers.get("x-api-key")
         if not api_key or not secrets.compare_digest(api_key, get_admin_secret()):
             raise HTTPException(401, "Admin access required")
 
-    stash = get_stash_or_404(stash_id, session)
+    # Don't use get_stash_or_404 since it rejects expired stashes
+    stash = session.get(Stash, stash_id)
+    if not stash:
+        raise HTTPException(404, "Stash not found")
+
     delete_stash_dir(stash_id)
     session.delete(stash)
     session.commit()
@@ -378,4 +387,25 @@ async def get_file_metadata(
         "size": get_dir_size(resolved) if is_dir else stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
         "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+@router.post("/{stash_id}/code")
+async def generate_access_code(
+    request: Request,
+    stash_id: str,
+    session: Session = Depends(get_session),
+):
+    """Generate a temporary 6-digit access code for this stash."""
+    stash = get_stash_or_404(stash_id, session)
+
+    if not has_stash_access(request, stash):
+        raise HTTPException(401, "Access denied")
+
+    code, expires_at = code_store.generate(stash_id)
+
+    return {
+        "code": code,
+        "expires_at": expires_at.isoformat(),
+        "ttl_seconds": settings.code_ttl_seconds,
     }

@@ -4,9 +4,17 @@ import secrets
 
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from netstashd.auth import AdminRequired
+from netstashd.cleanup import (
+    free_space,
+    get_expired_stashes,
+    purge_all_expired,
+    run_cleanup,
+)
+from netstashd.codes import code_store
 from netstashd.config import settings
 from netstashd.logging import get_logger
 from netstashd.secrets import (
@@ -251,3 +259,93 @@ async def api_rotate_session_secret():
         "status": "rotated",
         "message": "Session secret rotated. Restart the server to apply. All sessions will be invalidated.",
     }
+
+
+# --- Cleanup endpoints ---
+
+
+class FreeSpaceRequest(BaseModel):
+    target_bytes: int
+
+
+@router.get("/stashes/expired", dependencies=[AdminRequired])
+async def list_expired_stashes(session: Session = Depends(get_session)):
+    """List all expired stashes (in grace period)."""
+    expired = get_expired_stashes(session)
+
+    result = []
+    for stash in expired:
+        grace_remaining = stash.grace_remaining(settings.expired_grace_days)
+        stash_path = get_stash_path(stash.id)
+        disk_size = get_dir_size(stash_path) if stash_path.exists() else 0
+
+        result.append({
+            "stash": StashInfo.from_stash(stash),
+            "grace_remaining_seconds": int(grace_remaining.total_seconds()) if grace_remaining else 0,
+            "disk_size": disk_size,
+            "past_grace": stash.should_cleanup(settings.expired_grace_days),
+        })
+
+    # Sort by expiration date (oldest first)
+    result.sort(key=lambda x: x["stash"].expires_at)
+    return result
+
+
+@router.post("/cleanup", dependencies=[AdminRequired])
+async def trigger_cleanup(
+    dry_run: bool = False,
+    session: Session = Depends(get_session),
+):
+    """
+    Run cleanup of stashes past their grace period.
+
+    Args:
+        dry_run: If true, report what would be deleted without deleting
+    """
+    result = run_cleanup(session, dry_run=dry_run)
+    return {
+        "status": "dry_run" if dry_run else "completed",
+        "deleted_count": result.deleted_count,
+        "freed_bytes": result.freed_bytes,
+        "stash_ids": result.stash_ids,
+    }
+
+
+@router.post("/cleanup/free-space", dependencies=[AdminRequired])
+async def trigger_free_space(
+    body: FreeSpaceRequest,
+    dry_run: bool = False,
+    session: Session = Depends(get_session),
+):
+    """
+    Delete oldest expired stashes until target bytes are freed.
+
+    This deletes expired stashes (even those still in grace period),
+    starting with the oldest.
+    """
+    result = free_space(session, body.target_bytes, dry_run=dry_run)
+    return {
+        "status": "dry_run" if dry_run else "completed",
+        "deleted_count": result.deleted_count,
+        "freed_bytes": result.freed_bytes,
+        "target_bytes": body.target_bytes,
+        "stash_ids": result.stash_ids,
+    }
+
+
+@router.post("/cleanup/purge-expired", dependencies=[AdminRequired])
+async def trigger_purge_expired(
+    dry_run: bool = False,
+    session: Session = Depends(get_session),
+):
+    """
+    Delete ALL expired stashes immediately, ignoring grace period.
+    """
+    result = purge_all_expired(session, dry_run=dry_run)
+    return {
+        "status": "dry_run" if dry_run else "completed",
+        "deleted_count": result.deleted_count,
+        "freed_bytes": result.freed_bytes,
+        "stash_ids": result.stash_ids,
+    }
+
