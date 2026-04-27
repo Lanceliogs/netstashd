@@ -1,22 +1,22 @@
 services:
-  netstashd:
+  server:
     build: .
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-8099}:8000"
     volumes:
-      - ./data:/data/netstashd-vault
+      - D:/netstashd:/data/netstashd-vault
     environment:
       # Server
       - SHARE_ROOT=/data/netstashd-vault
       - ADMIN_SECRET=${ADMIN_SECRET:-change-me-to-something-random}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-session-secret}
       # Limits (admin)
-      - GLOBAL_MAX_BYTES=${GLOBAL_MAX_BYTES:-10GB}
+      - GLOBAL_MAX_BYTES=${GLOBAL_MAX_BYTES:-50GB}
       - RESERVE_BYTES=${RESERVE_BYTES:-500MB}
-      - MAX_STASH_SIZE_BYTES=${MAX_STASH_SIZE_BYTES:-5GB}
+      - MAX_STASH_SIZE_BYTES=${MAX_STASH_SIZE_BYTES:-10GB}
       - MAX_TTL_DAYS=${MAX_TTL_DAYS:-30}
       # Limits (guest)
-      - GUEST_MAX_STASH_SIZE_BYTES=${GUEST_MAX_STASH_SIZE_BYTES:-100MB}
+      - GUEST_MAX_STASH_SIZE_BYTES=${GUEST_MAX_STASH_SIZE_BYTES:-2GB}
       - GUEST_MAX_TTL_DAYS=${GUEST_MAX_TTL_DAYS:-7}
       - GUEST_REQUIRE_TTL=${GUEST_REQUIRE_TTL:-true}
       # Server bind
@@ -25,5 +25,5 @@ services:
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # Session
-      - SESSION_MAX_AGE_DAYS=${SESSION_MAX_AGE_DAYS:-365}
+      - SESSION_MAX_AGE_DAYS=${SESSION_MAX_AGE_DAYS:-30}
     restart: unless-stopped
