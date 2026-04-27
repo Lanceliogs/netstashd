@@ -6,10 +6,9 @@ RUN pip install poetry && \
     poetry config virtualenvs.create false
 
 COPY pyproject.toml poetry.lock* ./
+COPY . .
 RUN poetry install --no-interaction --no-ansi --only main
-
-COPY src/ ./src/
 
 EXPOSE 8000
 
-CMD ["python", "-m", "stashd"]
+CMD ["python", "-m", "netstashd"]
