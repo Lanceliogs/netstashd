@@ -80,7 +80,7 @@
                     <tr class="file-row" 
                         data-name="{{ file.name }}" 
                         data-is-dir="{{ 'true' if file.is_dir else 'false' }}"
-                        onclick="handleRowClick(event, '{{ file.name }}', {{ 'true' if file.is_dir else 'false' }})"
+                        onclick="handleRowClick(event)"
                     >
                         <td class="col-checkbox" onclick="event.stopPropagation()">
                             <input type="checkbox" class="file-checkbox" onchange="updateSelection()">
@@ -219,11 +219,12 @@ document.querySelectorAll('.file-row').forEach((row, index) => {
 });
 
 // Row click handler (select for preview)
-function handleRowClick(event, filename, isDir) {
-    // Don't select if clicking on a link
+function handleRowClick(event) {
     if (event.target.tagName === 'A') return;
     
     const row = event.currentTarget;
+    const filename = row.dataset.name;
+    const isDir = row.dataset.isDir === 'true';
     const wasSelected = row.classList.contains('selected');
     
     if (wasSelected) {
